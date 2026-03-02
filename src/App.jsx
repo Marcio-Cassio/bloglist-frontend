@@ -3,6 +3,7 @@ import Blog from './components/Blog'
 import Notification from './components/Notification'
 import blogService from './services/blogs'
 import loginService from './services/login'
+import Togglable from './components/Togglable'
 import BlogForm from './components/BlogForm'
 
 const App = () => {
@@ -14,6 +15,7 @@ const App = () => {
 
   const [notification, setNotification] = useState(null)
   const notificationTimeoutRef = useRef(null)
+  const blogFormRef = useRef()
 
   const notify = (message, type = 'success') => {
     setNotification({ message, type })
@@ -70,12 +72,63 @@ const App = () => {
   const createBlog = async (blogObject) => {
   try {
     const returnedBlog = await blogService.create(blogObject)
-    setBlogs(blogs.concat(returnedBlog))
-    notify(`a new blog ${returnedBlog.title} by ${returnedBlog.author} added`, 'success')
+
+    const blogForState = {
+      ...returnedBlog,
+      user:
+        typeof returnedBlog.user === 'string'
+          ? { username: user.username, name: user.name, id: returnedBlog.user }
+          : returnedBlog.user
+    }
+
+    blogFormRef.current?.toggleVisibility()
+    setBlogs(prevBlogs => prevBlogs.concat(blogForState))
+    notify(`a new blog ${blogForState.title} by ${blogForState.author} added`, 'success')
   } catch (error) {
     notify('failed to add blog', 'error')
   }
 }
+
+  const likeBlog = async (blog) => {
+    const userId =
+      typeof blog.user === 'object'
+        ? (blog.user.id || blog.user._id)
+        : blog.user
+
+    const updatedBlog = {
+      title: blog.title,
+      author: blog.author,
+      url: blog.url,
+      likes: blog.likes + 1,
+      user: userId,
+    }
+
+    const returnedBlog = await blogService.update(blog.id, updatedBlog)
+
+    const mergedBlog = {
+      ...returnedBlog,
+      user: returnedBlog.user?.name ? returnedBlog.user : blog.user
+    }
+
+    setBlogs(prevBlogs =>
+      prevBlogs.map(b => (b.id === blog.id ? mergedBlog : b))
+    )
+  }
+
+  const blogsToShow = [...blogs].sort((a, b) => b.likes - a.likes)
+
+  const deleteBlog = async (blog) => {
+    const ok = window.confirm(`Remove blog ${blog.title} by ${blog.author}?`)
+    if (!ok) return
+
+    try {
+      await blogService.remove(blog.id)
+      setBlogs(prevBlogs => prevBlogs.filter(b => b.id !== blog.id))
+      notify(`removed ${blog.title}`, 'success')
+    } catch (error) {
+      notify('failed to remove blog', 'error')
+    }
+  }
 
   if (user === null) {
     return (
@@ -118,10 +171,18 @@ const App = () => {
         {user.name} logged in <button onClick={handleLogout}>logout</button>
       </div>
 
-      <BlogForm createBlog={createBlog} />
+      <Togglable buttonLabel="create new blog" ref={blogFormRef}>
+        <BlogForm createBlog={createBlog} />
+      </Togglable>
 
-      {blogs.map(blog =>
-        <Blog key={blog.id} blog={blog} />
+      {blogsToShow.map(blog =>
+        <Blog
+          key={blog.id}
+          blog={blog}
+          user={user}
+          handleLike={likeBlog}
+          handleRemove={deleteBlog}
+        />
       )}
     </div>
   )
