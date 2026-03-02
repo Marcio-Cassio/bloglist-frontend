@@ -30,16 +30,21 @@ const App = () => {
     }, 5000)
   }
 
+  const getBlogId = (blog) => blog?.id ?? blog?._id
+
   useEffect(() => {
-    blogService.getAll().then(blogs => setBlogs(blogs))
+    blogService.getAll().then((fetched) => {
+      const safeBlogs = Array.isArray(fetched) ? fetched.filter(Boolean) : []
+      setBlogs(safeBlogs)
+    })
   }, [])
 
   useEffect(() => {
     const loggedUserJSON = window.localStorage.getItem('loggedBlogappUser')
     if (loggedUserJSON) {
-      const user = JSON.parse(loggedUserJSON)
-      setUser(user)
-      blogService.setToken(user.token)
+      const storedUser = JSON.parse(loggedUserJSON)
+      setUser(storedUser)
+      blogService.setToken(storedUser.token)
     }
   }, [])
 
@@ -47,16 +52,16 @@ const App = () => {
     event.preventDefault()
 
     try {
-      const user = await loginService.login({ username, password })
+      const loggedInUser = await loginService.login({ username, password })
 
-      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(user))
-      blogService.setToken(user.token)
-      setUser(user)
+      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(loggedInUser))
+      blogService.setToken(loggedInUser.token)
+      setUser(loggedInUser)
 
       setUsername('')
       setPassword('')
 
-      notify(`${user.name} logged in`, 'success')
+      notify(`${loggedInUser.name} logged in`, 'success')
     } catch (error) {
       notify('wrong username or password', 'error')
     }
@@ -70,26 +75,29 @@ const App = () => {
   }
 
   const createBlog = async (blogObject) => {
-  try {
-    const returnedBlog = await blogService.create(blogObject)
+    try {
+      const returnedBlog = await blogService.create(blogObject)
 
-    const blogForState = {
-      ...returnedBlog,
-      user:
-        typeof returnedBlog.user === 'string'
-          ? { username: user.username, name: user.name, id: returnedBlog.user }
-          : returnedBlog.user
+      const blogForState = {
+        ...returnedBlog,
+        user:
+          typeof returnedBlog.user === 'string'
+            ? { username: user.username, name: user.name, id: returnedBlog.user }
+            : returnedBlog.user
+      }
+
+      blogFormRef.current?.toggleVisibility()
+      setBlogs((prevBlogs) => prevBlogs.filter(Boolean).concat(blogForState))
+      notify(`a new blog ${blogForState.title} by ${blogForState.author} added`, 'success')
+    } catch (error) {
+      notify('failed to add blog', 'error')
     }
-
-    blogFormRef.current?.toggleVisibility()
-    setBlogs(prevBlogs => prevBlogs.concat(blogForState))
-    notify(`a new blog ${blogForState.title} by ${blogForState.author} added`, 'success')
-  } catch (error) {
-    notify('failed to add blog', 'error')
   }
-}
 
   const likeBlog = async (blog) => {
+    const id = getBlogId(blog)
+    if (!id) return
+
     const userId =
       typeof blog.user === 'object'
         ? (blog.user.id || blog.user._id)
@@ -99,36 +107,44 @@ const App = () => {
       title: blog.title,
       author: blog.author,
       url: blog.url,
-      likes: blog.likes + 1,
+      likes: (blog.likes ?? 0) + 1,
       user: userId,
     }
 
-    const returnedBlog = await blogService.update(blog.id, updatedBlog)
+    const returnedBlog = await blogService.update(id, updatedBlog)
 
     const mergedBlog = {
       ...returnedBlog,
       user: returnedBlog.user?.name ? returnedBlog.user : blog.user
     }
 
-    setBlogs(prevBlogs =>
-      prevBlogs.map(b => (b.id === blog.id ? mergedBlog : b))
+    setBlogs((prevBlogs) =>
+      prevBlogs
+        .filter(Boolean)
+        .map((b) => (getBlogId(b) === id ? mergedBlog : b))
     )
   }
 
-  const blogsToShow = [...blogs].sort((a, b) => b.likes - a.likes)
-
   const deleteBlog = async (blog) => {
+    const id = getBlogId(blog)
+    if (!id) return
+
     const ok = window.confirm(`Remove blog ${blog.title} by ${blog.author}?`)
     if (!ok) return
 
     try {
-      await blogService.remove(blog.id)
-      setBlogs(prevBlogs => prevBlogs.filter(b => b.id !== blog.id))
+      await blogService.remove(id)
+      setBlogs((prevBlogs) => prevBlogs.filter(Boolean).filter((b) => getBlogId(b) !== id))
       notify(`removed ${blog.title}`, 'success')
     } catch (error) {
       notify('failed to remove blog', 'error')
     }
   }
+
+  const blogsToShow = blogs
+    .filter(Boolean)
+    .slice()
+    .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0))
 
   if (user === null) {
     return (
@@ -175,15 +191,15 @@ const App = () => {
         <BlogForm createBlog={createBlog} />
       </Togglable>
 
-      {blogsToShow.map(blog =>
+      {blogsToShow.map((blog) => (
         <Blog
-          key={blog.id}
+          key={getBlogId(blog) ?? blog.url ?? `${blog.title}-${blog.author}`}
           blog={blog}
           user={user}
           handleLike={likeBlog}
           handleRemove={deleteBlog}
         />
-      )}
+      ))}
     </div>
   )
 }
