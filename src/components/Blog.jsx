@@ -23,7 +23,7 @@ const Blog = ({ blog, user, handleLike, handleRemove }) => {
     blog.user.username === user.username
 
   return (
-    <div style={blogStyle}>
+    <div style={blogStyle} data-testid="blog-item">
       <div>
         {blog.title} {blog.author}{' '}
         <button onClick={toggleDetails}>
