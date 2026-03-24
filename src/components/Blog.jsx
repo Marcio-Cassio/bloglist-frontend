@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 const Blog = ({ blog, user, handleLike, handleRemove }) => {
   const [detailsVisible, setDetailsVisible] = useState(false)
@@ -8,13 +9,13 @@ const Blog = ({ blog, user, handleLike, handleRemove }) => {
     paddingLeft: 2,
     border: 'solid',
     borderWidth: 1,
-    marginBottom: 5
+    marginBottom: 5,
   }
 
   const toggleDetails = () => {
     setDetailsVisible(!detailsVisible)
   }
-  
+
   const canRemove =
     blog.user &&
     typeof blog.user === 'object' &&
@@ -25,7 +26,9 @@ const Blog = ({ blog, user, handleLike, handleRemove }) => {
   return (
     <div style={blogStyle} data-testid="blog-item">
       <div>
-        {blog.title} {blog.author}{' '}
+        <Link to={`/blogs/${blog.id}`}>
+          {blog.title} {blog.author}
+        </Link>{' '}
         <button onClick={toggleDetails}>
           {detailsVisible ? 'hide' : 'view'}
         </button>

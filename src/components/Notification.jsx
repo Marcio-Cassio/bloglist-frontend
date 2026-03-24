@@ -1,4 +1,8 @@
-const Notification = ({ notification }) => {
+import { useNotificationValue } from '../contexts/NotificationContext'
+
+const Notification = () => {
+  const notification = useNotificationValue()
+
   if (!notification) return null
 
   const { message, type } = notification

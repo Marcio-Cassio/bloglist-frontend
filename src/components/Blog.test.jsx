@@ -9,7 +9,7 @@ test('renders blog title and author', () => {
     author: 'Marcio',
     url: 'http://example.com',
     likes: 7,
-    user: { username: 'marcio', name: 'Marcio' }
+    user: { username: 'marcio', name: 'Marcio' },
   }
 
   render(
@@ -18,7 +18,7 @@ test('renders blog title and author', () => {
       user={blog.user}
       handleLike={() => {}}
       handleRemove={() => {}}
-    />
+    />,
   )
 })
 
@@ -28,7 +28,7 @@ test('renders url and likes only after clicking view', async () => {
     author: 'Marcio',
     url: 'http://example.com',
     likes: 7,
-    user: { username: 'marcio', name: 'Marcio' }
+    user: { username: 'marcio', name: 'Marcio' },
   }
 
   const user = userEvent.setup()
@@ -39,7 +39,7 @@ test('renders url and likes only after clicking view', async () => {
       user={blog.user}
       handleLike={() => {}}
       handleRemove={() => {}}
-    />
+    />,
   )
 
   // hidden initially
@@ -59,7 +59,7 @@ test('clicking like twice calls event handler twice', async () => {
     author: 'Marcio',
     url: 'http://example.com',
     likes: 7,
-    user: { username: 'marcio', name: 'Marcio' }
+    user: { username: 'marcio', name: 'Marcio' },
   }
 
   const mockLikeHandler = vi.fn()
@@ -71,7 +71,7 @@ test('clicking like twice calls event handler twice', async () => {
       user={blog.user}
       handleLike={mockLikeHandler}
       handleRemove={() => {}}
-    />
+    />,
   )
 
   // ensure like button is visible (if it appears only after "view")

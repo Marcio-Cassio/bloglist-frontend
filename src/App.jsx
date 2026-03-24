@@ -1,52 +1,64 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Blog from './components/Blog'
 import Notification from './components/Notification'
 import blogService from './services/blogs'
 import loginService from './services/login'
 import Togglable from './components/Togglable'
 import BlogForm from './components/BlogForm'
+import {
+  useNotificationDispatch,
+  setNotification,
+} from './contexts/NotificationContext'
+import {
+  useUserValue,
+  useUserDispatch,
+  setUser as setLoggedUser,
+  clearUser,
+} from './contexts/UserContext'
+import { Routes, Route, Link } from 'react-router-dom'
+import Users from './components/Users'
+import User from './components/User'
+import BlogView from './components/BlogView'
+
 
 const App = () => {
-  const [blogs, setBlogs] = useState([])
-  const [user, setUser] = useState(null)
-
+  const user = useUserValue()
+  const userDispatch = useUserDispatch()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
-  const [notification, setNotification] = useState(null)
-  const notificationTimeoutRef = useRef(null)
+  const notificationDispatch = useNotificationDispatch()
   const blogFormRef = useRef()
-
-  const notify = (message, type = 'success') => {
-    setNotification({ message, type })
-
-    if (notificationTimeoutRef.current) {
-      clearTimeout(notificationTimeoutRef.current)
-    }
-
-    notificationTimeoutRef.current = setTimeout(() => {
-      setNotification(null)
-      notificationTimeoutRef.current = null
-    }, 5000)
-  }
+  const queryClient = useQueryClient()
 
   const getBlogId = (blog) => blog?.id ?? blog?._id
 
-  useEffect(() => {
-    blogService.getAll().then((fetched) => {
-      const safeBlogs = Array.isArray(fetched) ? fetched.filter(Boolean) : []
-      setBlogs(safeBlogs)
-    })
-  }, [])
+  const blogsQuery = useQuery({
+    queryKey: ['blogs'],
+    queryFn: blogService.getAll,
+  })
 
-  useEffect(() => {
-    const loggedUserJSON = window.localStorage.getItem('loggedBlogappUser')
-    if (loggedUserJSON) {
-      const storedUser = JSON.parse(loggedUserJSON)
-      setUser(storedUser)
-      blogService.setToken(storedUser.token)
-    }
-  }, [])
+  const createBlogMutation = useMutation({
+    mutationFn: blogService.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['blogs'] })
+    },
+  })
+
+  const updateBlogMutation = useMutation({
+    mutationFn: ({ id, updatedBlog }) => blogService.update(id, updatedBlog),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['blogs'] })
+    },
+  })
+
+  const deleteBlogMutation = useMutation({
+    mutationFn: blogService.remove,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['blogs'] })
+    },
+  })
 
   const handleLogin = async (event) => {
     event.preventDefault()
@@ -54,43 +66,34 @@ const App = () => {
     try {
       const loggedInUser = await loginService.login({ username, password })
 
-      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(loggedInUser))
-      blogService.setToken(loggedInUser.token)
-      setUser(loggedInUser)
+      setLoggedUser(userDispatch, loggedInUser)
 
       setUsername('')
       setPassword('')
 
-      notify(`${loggedInUser.name} logged in`, 'success')
+      setNotification(notificationDispatch, `${loggedInUser.name} logged in`, 'success')
     } catch (error) {
-      notify('wrong username or password', 'error')
+      setNotification(notificationDispatch, 'wrong username or password', 'error')
     }
   }
 
   const handleLogout = () => {
-    window.localStorage.removeItem('loggedBlogappUser')
-    blogService.setToken(null)
-    setUser(null)
-    notify('logged out', 'success')
+    clearUser(userDispatch)
+    setNotification(notificationDispatch, 'logged out', 'success')
   }
 
   const createBlog = async (blogObject) => {
     try {
-      const returnedBlog = await blogService.create(blogObject)
-
-      const blogForState = {
-        ...returnedBlog,
-        user:
-          typeof returnedBlog.user === 'string'
-            ? { username: user.username, name: user.name, id: returnedBlog.user }
-            : returnedBlog.user
-      }
-
+      const createdBlog = await createBlogMutation.mutateAsync(blogObject)
       blogFormRef.current?.toggleVisibility()
-      setBlogs((prevBlogs) => prevBlogs.filter(Boolean).concat(blogForState))
-      notify(`a new blog ${blogForState.title} by ${blogForState.author} added`, 'success')
+
+      setNotification(
+        notificationDispatch,
+        `a new blog ${createdBlog.title} by ${createdBlog.author} added`,
+        'success'
+      )
     } catch (error) {
-      notify('failed to add blog', 'error')
+        setNotification(notificationDispatch, 'failed to add blog', 'error')
     }
   }
 
@@ -100,7 +103,7 @@ const App = () => {
 
     const userId =
       typeof blog.user === 'object'
-        ? (blog.user.id || blog.user._id)
+        ? blog.user.id || blog.user._id
         : blog.user
 
     const updatedBlog = {
@@ -111,18 +114,11 @@ const App = () => {
       user: userId,
     }
 
-    const returnedBlog = await blogService.update(id, updatedBlog)
-
-    const mergedBlog = {
-      ...returnedBlog,
-      user: returnedBlog.user?.name ? returnedBlog.user : blog.user
+    try {
+      await updateBlogMutation.mutateAsync({ id, updatedBlog })
+    } catch (error) {
+      setNotification(notificationDispatch, 'failed to update blog', 'error')
     }
-
-    setBlogs((prevBlogs) =>
-      prevBlogs
-        .filter(Boolean)
-        .map((b) => (getBlogId(b) === id ? mergedBlog : b))
-    )
   }
 
   const deleteBlog = async (blog) => {
@@ -133,23 +129,33 @@ const App = () => {
     if (!ok) return
 
     try {
-      await blogService.remove(id)
-      setBlogs((prevBlogs) => prevBlogs.filter(Boolean).filter((b) => getBlogId(b) !== id))
-      notify(`removed ${blog.title}`, 'success')
+      await deleteBlogMutation.mutateAsync(id)
+      setNotification(notificationDispatch, `removed ${blog.title}`, 'success')
     } catch (error) {
-      notify('failed to remove blog', 'error')
+    setNotification(notificationDispatch, 'failed to remove blog', 'error')
     }
   }
 
+  const blogs = Array.isArray(blogsQuery.data)
+    ? blogsQuery.data.filter(Boolean)
+    : []
+
   const blogsToShow = blogs
-    .filter(Boolean)
     .slice()
     .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0))
+
+  if (blogsQuery.isLoading) {
+    return <div>loading blogs...</div>
+  }
+
+  if (blogsQuery.isError) {
+    return <div>blog service not available due to problems in server</div>
+  }
 
   if (user === null) {
     return (
       <div>
-        <Notification notification={notification} />
+        <Notification />
 
         <h2>Log in to application</h2>
 
@@ -181,28 +187,44 @@ const App = () => {
   }
 
   return (
+  <div>
+    <Notification />
+
     <div>
-      <Notification notification={notification} />
-
-      <h2>blogs</h2>
-      <div>
-        {user.name} logged in <button onClick={handleLogout}>logout</button>
-      </div>
-
-      <Togglable buttonLabel="create new blog" ref={blogFormRef}>
-        <BlogForm createBlog={createBlog} />
-      </Togglable>
-
-      {blogsToShow.map((blog) => (
-        <Blog
-          key={getBlogId(blog) ?? blog.url ?? `${blog.title}-${blog.author}`}
-          blog={blog}
-          user={user}
-          handleLike={likeBlog}
-          handleRemove={deleteBlog}
-        />
-      ))}
+      <Link to="/">blogs</Link>{' '}
+      <Link to="/users">users</Link>{' '}
+      {user.name} logged in <button onClick={handleLogout}>logout</button>
     </div>
+
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <div>
+            <h2>blogs</h2>
+            
+            <Togglable buttonLabel="create new blog" ref={blogFormRef}>
+              <BlogForm createBlog={createBlog} />
+            </Togglable>
+
+            {blogsToShow.map((blog) => (
+              <Blog
+                key={getBlogId(blog) ?? blog.url ?? `${blog.title}-${blog.author}`}
+                blog={blog}
+                user={user}
+                handleLike={likeBlog}
+                handleRemove={deleteBlog}
+              />
+            ))}
+          </div>
+        }
+      />
+
+      <Route path="/users" element={<Users />} />
+      <Route path="/users/:id" element={<User />} />
+      <Route path="/blogs/:id" element={<BlogView />} />
+    </Routes>
+  </div>
   )
 }
 
